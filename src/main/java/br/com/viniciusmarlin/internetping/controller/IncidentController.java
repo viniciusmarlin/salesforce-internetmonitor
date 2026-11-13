@@ -8,6 +8,7 @@ import br.com.viniciusmarlin.internetping.model.NetworkIncident;
 import br.com.viniciusmarlin.internetping.repository.IncidentRepository;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/incidents")
@@ -22,5 +23,13 @@ public class IncidentController {
     @GetMapping
     public List<NetworkIncident> listAll() {
         return repository.findAll();
+    }
+
+    @GetMapping({"/", "/health"})
+    public Map<String, String> healthCheck() {
+        return Map.of(
+            "status", "ONLINE",
+            "service", "Network Monitor API - Salesforce Integration"
+        );
     }
 }
