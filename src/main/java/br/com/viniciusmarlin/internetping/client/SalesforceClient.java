@@ -9,6 +9,8 @@ import org.springframework.web.client.RestClient;
 
 import br.com.viniciusmarlin.internetping.model.NetworkIncident;
 
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @Component
@@ -29,23 +31,31 @@ public class SalesforceClient {
         this.restClient = RestClient.create();
     }
 
-    public String createNetworkCase(NetworkIncident incident) {
+    public String createNetworkIncident(NetworkIncident incident) {
         String token = authenticate();
 
+        // Formata as datas para ISO-8601 exigido pelo Salesforce (ex: 2026-11-16T12:00:00.000Z)
+        DateTimeFormatter sfFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        String startIso = incident.getStartedAt().atOffset(ZoneOffset.UTC).format(sfFormatter);
+        String endIso = incident.getEndedAt().atOffset(ZoneOffset.UTC).format(sfFormatter);
+
         Map<String, Object> payload = Map.of(
-            "Subject", "[Alerta Automático] Queda de Link de Internet Detectada",
-            "Status", "New",
-            "Origin", "Monitoramento API",
-            "Priority", "High",
-            "Description", String.format(
-                "Indisponibilidade detectada automaticamente pela API de monitoramento.\n" +
-                "Início: %s\nRetorno: %s\nDuração total: %d segundos.",
-                incident.getStartedAt(), incident.getEndedAt(), incident.getDurationSeconds()
-            )
+                "Subject", "[Alerta Automático] Queda de Link de Internet Detectada",
+                "Status", "New",
+                "Priority", "High",
+                "Urgency", "High",
+                "Impact", "High",
+                "StartDateTime", startIso,
+                "EndDateTime", endIso,
+                "Description", String.format(
+                        "Indisponibilidade detectada automaticamente pela API de monitoramento.\n" +
+                                "Início: %s\nRetorno: %s\nDuração total: %d segundos.",
+                        incident.getStartedAt(), incident.getEndedAt(), incident.getDurationSeconds()
+                )
         );
 
         Map<?, ?> response = restClient.post()
-                .uri(instanceUrl + "/services/data/v60.0/sobjects/Case")
+                .uri(instanceUrl + "/services/data/v60.0/sobjects/Incident")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)

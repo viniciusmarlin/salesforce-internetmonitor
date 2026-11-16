@@ -25,7 +25,6 @@ public class NetworkMonitorService {
 
     private final IncidentRepository repository;
     private final SalesforceClient salesforceClient;
-    
 
     @Value("${monitor.target.host}")
     private String targetHost;
@@ -46,13 +45,23 @@ public class NetworkMonitorService {
         this.salesforceClient = salesforceClient;
     }
 
+    public synchronized void updateTarget(String newHost, int newPort) {
+        this.targetHost = newHost;
+        this.targetPort = newPort;
+        this.consecutiveFailures = 0;
+        log.info("Alvo de monitoramento alterado em tempo real para {}:{}", newHost, newPort);
+    }
+
+    public String getTargetHost() { return targetHost; }
+    public int getTargetPort() { return targetPort; }
+
     @Scheduled(fixedRate = 5000)
     public void monitorNetwork() {
         boolean isOnline = checkTcpConnection();
 
         if (!isOnline) {
             consecutiveFailures++;
-            log.warn("Falha de conexão ({}/{}).", consecutiveFailures, failureThreshold);
+            log.warn("Falha de conexão em {}:{} ({}/{}).", targetHost, targetPort, consecutiveFailures, failureThreshold);
 
             if (consecutiveFailures >= failureThreshold) {
                 Optional<NetworkIncident> active = repository.findFirstByStatus(IncidentStatus.ONGOING);
@@ -65,14 +74,12 @@ public class NetworkMonitorService {
         } else {
             consecutiveFailures = 0;
 
-            // Se havia uma queda em andamento, encerra agora
             repository.findFirstByStatus(IncidentStatus.ONGOING).ifPresent(incident -> {
                 incident.closeIncident(LocalDateTime.now());
                 repository.save(incident);
                 log.info("CONEXÃO RESTABELECIDA. Duração: {}s", incident.getDurationSeconds());
             });
 
-            // Sincroniza qualquer incidente pendente com o Salesforce
             syncPendingIncidents();
         }
     }
@@ -90,10 +97,10 @@ public class NetworkMonitorService {
         List<NetworkIncident> pending = repository.findAllByStatus(IncidentStatus.PENDING_SYNC);
         for (NetworkIncident incident : pending) {
             try {
-                String caseId = salesforceClient.createNetworkCase(incident);
-                incident.markAsSynced(caseId);
+                String incidentId = salesforceClient.createNetworkIncident(incident);
+                incident.markAsSynced(incidentId);
                 repository.save(incident);
-                log.info("Alerta enviado ao Salesforce! Case ID: {}", caseId);
+                log.info("Incidente enviado ao Salesforce! Incident ID: {}", incidentId);
             } catch (Exception e) {
                 log.error("Erro ao sincronizar com Salesforce (tentará novamente no próximo ciclo): {}", e.getMessage());
             }
